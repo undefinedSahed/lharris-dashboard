@@ -5,7 +5,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -32,7 +31,6 @@ const loginFormSchema = z.object({
 type LoginFormValues = z.infer<typeof loginFormSchema>;
 
 export function LoginForm() {
-  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -60,8 +58,7 @@ export function LoginForm() {
         toast.error(response?.error);
       } else {
         toast.success("Login successful");
-        router.push("/");
-        router.refresh();
+        window.location.href = "/";
       }
     } catch (error) {
       toast.error("Something went wrong. Please try again. || " + error);
@@ -73,7 +70,7 @@ export function LoginForm() {
   return (
     <div className="flex min-h-screen overflow-hidden">
       {/* Left section */}
-      <div className="hidden lg:flex w-1/2 bg-[#0a1155] text-white p-12 flex-col justify-between relative ">
+      <div className="hidden lg:flex w-1/2 bg-[#0a1155] text-white p-12 flex-col justify-between relative overflow-hidden">
         <div className="border-[7px] border-[#212767] w-[592px] h-[455px] rounded-[400px] absolute lg:-top-[200px] xl:-bottom-[300px] -left-[500px] rotate-[-45deg]"></div>
         <div>
           <Link href="/">
@@ -96,7 +93,7 @@ export function LoginForm() {
       </div>
 
       {/* Right section */}
-      <div className="flex flex-col justify-center w-full lg:w-1/2 px-8 py-12 sm:px-16">
+      <div className="flex flex-col justify-center w-full lg:w-1/2 px-8 py-12 sm:px-16 z-20 ">
         <div className="w-full mx-auto space-y-6">
           <h2 className="text-4xl md:text-6xl font-[600] text-gray-900 text-center">
             Welcome User

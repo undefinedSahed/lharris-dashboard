@@ -1,8 +1,7 @@
 "use client"
 
-import React from "react"
-
-import { useState, useEffect, useRef } from "react"
+import type React from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -38,14 +37,6 @@ interface MetricsData {
   confirmVisits: number
   inProgress: number
 }
-
-// Define types for our calendar data
-// interface CalendarDay {
-//   day: number
-//   status?: "success" | "cancelled" | "pending" | "confirmed" | "normal"
-//   hasVisit?: boolean
-//   visitTime?: string
-// }
 
 // Define types for our visits API response
 interface VisitClient {
@@ -118,6 +109,19 @@ interface SpecificVisitResponse {
     fullname: string
     email: string
   }
+  userPlan?: {
+    _id: string
+    addOnServices: [
+      {
+        _id: string,
+        name: string
+      }
+    ]
+    plan: {
+      _id: string
+      name: string
+    }
+  }
   address?: string
   date?: string
   status?: string
@@ -172,6 +176,19 @@ interface RevenueGrowthResponse {
   data: RevenueGrowthData[]
 }
 
+// Update the UserResponse interface to match the provided API response format
+interface UserResponse {
+  status: boolean
+  message: string
+  data: UserData[]
+  pagination: {
+    currentPage: number
+    totalPages: number
+    totalItems: number
+    itemsPerPage: number
+  }
+}
+
 interface UserData {
   _id: string
   fullname: string
@@ -179,16 +196,6 @@ interface UserData {
   role: "admin" | "client" | "staff" | "user" | "moderator"
   status: "active" | "inactive"
   lastActive: string
-}
-
-interface UserResponse {
-  status: boolean
-  data: UserData[]
-  pagination: {
-    currentPage: number
-    totalPages: number
-    totalItems: number
-  }
 }
 
 interface StaffMember {
@@ -234,14 +241,6 @@ interface Notification {
   time?: string
 }
 
-// Interface for the pagination object
-// interface Pagination {
-//   page: number
-//   limit: number
-//   total: number
-//   pages: number
-// }
-
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("overview")
   const [searchTerm, setSearchTerm] = useState("")
@@ -256,8 +255,9 @@ export default function DashboardPage() {
     confirmVisits: 0,
     inProgress: 0,
   })
+
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  // const [error, setError] = useState<string | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState("")
@@ -268,12 +268,12 @@ export default function DashboardPage() {
     role: "client" as "client" | "admin" | "staff",
   })
   const [visitsData, setVisitsData] = useState<VisitResponse | null>(null)
+
   const [specificVisit, setSpecificVisit] = useState<SpecificVisitResponse | null>(null)
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
   const [selectedVisitId, setSelectedVisitId] = useState("")
   const [isDeleteVisitDialogOpen, setIsDeleteVisitDialogOpen] = useState(false)
   const [visitStatusFilter, setVisitStatusFilter] = useState<string>("all")
-  const [visitDateFilter, setVisitDateFilter] = useState<string>("all")
   const [isEditVisitDialogOpen, setIsEditVisitDialogOpen] = useState(false)
   const [editVisitData, setEditVisitData] = useState<EditVisitData>({
     staff: "",
@@ -290,13 +290,14 @@ export default function DashboardPage() {
   // Pagination states for User Management tab
   const [currentUserPage, setCurrentUserPage] = useState<number>(1)
   const [totalUserPages, setTotalUserPages] = useState<number>(1)
-  const [itemsPerPage] = useState<number>(5)
+  const [itemsPerPage] = useState<number>(10)
   // Pagination states for Visits tab
   const [currentVisitPage, setCurrentVisitPage] = useState<number>(1)
   const [totalVisitPages, setTotalVisitPages] = useState<number>(1)
-  const [visitsPerPage] = useState<number>(5)
+  const [visitsPerPage] = useState<number>(10)
 
   const [metricsData, setMetricsData] = useState<AllMetrics | null>(null)
+
   const [revenueData, setRevenueData] = useState<RevenueGrowthData[]>([])
   const [isRevenueLoading, setIsRevenueLoading] = useState(false)
   const chartRef = useRef<HTMLDivElement>(null)
@@ -309,6 +310,27 @@ export default function DashboardPage() {
 
   // State for the overview tab visit filter
   const [overviewVisitStatusFilter, setOverviewVisitStatusFilter] = useState<string>("all")
+  const [isNotificationsLoading, setIsNotificationsLoading] = useState(false)
+
+  // Debounce function for search
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+
+  // Debounced search handler
+  const debouncedSearch = useCallback(
+    (value: string) => {
+      const handler = setTimeout(() => {
+        setVisitSearchTerm(value)
+        setCurrentVisitPage(1)
+      }, 500)
+
+      return () => clearTimeout(handler)
+    },
+    [setVisitSearchTerm, setCurrentVisitPage],
+  ) as (value: string) => void
+
+
+  console.log(session?.data?.accessToken)
+
 
   // Fetch metrics data from API
   useEffect(() => {
@@ -329,18 +351,18 @@ export default function DashboardPage() {
 
         // Update metrics with data from API
         setMetrics({
-          activeUsers: data?.data?.activeUsersCount || 128,
-          totalVisits: data?.data?.activeUsersCount || 342,
+          activeUsers: data?.data?.activeUsersCount,
+          totalVisits: data?.data?.totalVisits,
           pendingVisits: data?.data?.pendingVisits ?? 12,
-          totalSecurityStaff: data?.data?.totalStaffMembers || 342,
-          totalAdmin: data?.data?.totalAdmins || 28,
-          confirmVisits: data?.data?.confirmVisits || 128,
-          inProgress: data?.data?.inProgress || 9,
+          totalSecurityStaff: data?.data?.totalStaffMembers,
+          totalAdmin: data?.data?.totalAdmins,
+          confirmVisits: data?.data?.confirmVisits,
+          inProgress: data?.data?.inProgress,
         })
-        setError(null)
+        // setError(null)
       } catch (err) {
         console.error("Error fetching metrics:", err)
-        setError("Failed to load metrics data. Using fallback data.")
+        // setError("Failed to load metrics data. Using fallback data.")
       } finally {
         setIsLoading(false)
       }
@@ -370,6 +392,7 @@ export default function DashboardPage() {
         setRecentData(data)
       } catch (err) {
         console.error("Error:", err)
+        // toast.error(err instanceof Error ? err.message : String(err))
       }
     }
 
@@ -378,77 +401,112 @@ export default function DashboardPage() {
 
   const [userData, setUserData] = useState<UserData[]>([])
 
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/admin/all-user?page=${currentUserPage}&limit=${itemsPerPage}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          },
-        )
+  const fetchUsers = useCallback(async () => {
+    try {
+      // Build query parameters including filters
+      const queryParams = new URLSearchParams({
+        page: currentUserPage.toString(),
+        limit: itemsPerPage.toString(),
+      })
 
-        if (!res.ok) {
-          throw new Error("Failed to fetch")
-        }
+      // Add role filter if not "all"
+      if (roleFilter !== "all") {
+        queryParams.append("role", roleFilter)
+      }
 
-        const response: UserResponse = await res.json()
+      // Add status filter if not "all"
+      if (statusFilter !== "all") {
+        queryParams.append("status", statusFilter)
+      }
+
+      // Add search term if present
+      if (searchTerm.trim()) {
+        queryParams.append("search", searchTerm.trim())
+      }
+
+      const apiUrl = `${process.env.NEXT_PUBLIC_API_URL}/admin/all-user?${queryParams.toString()}`
+
+      const res = await fetch(apiUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      })
+
+      if (!res.ok) {
+        throw new Error("Failed to fetch")
+      }
+
+      const response: UserResponse = await res.json()
+
+      if (response.status) {
         setUserData(response.data)
         if (response.pagination) {
           setTotalUserPages(response.pagination.totalPages)
           setCurrentUserPage(response.pagination.currentPage)
         }
-      } catch (err) {
-        console.error("Error:", err)
-        toast.error("Failed to fetch users")
+      } else {
+        throw new Error(response.message || "Failed to fetch users")
       }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err) || "Failed to fetch users")
     }
+  }, [currentUserPage, roleFilter, statusFilter, searchTerm, token, itemsPerPage])
 
+  // Update the useEffect dependency array to include roleFilter, statusFilter, and searchTerm
+  useEffect(() => {
     if (activeTab === "users") {
       fetchUsers()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, token, currentUserPage])
+  }, [activeTab, token, currentUserPage, roleFilter, statusFilter, searchTerm, fetchUsers])
 
+  const [datas, setDatas] = useState<VisitResponse | null>(null)
+
+  // Update the useEffect for fetching visits to properly handle pagination
   useEffect(() => {
     const fetchVisits = async () => {
       try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/visits/get-all-visit?page=${currentVisitPage}&limit=${visitsPerPage}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
+        const baseUrl = `${process.env.NEXT_PUBLIC_API_URL}/visits/get-all-visit`
+        const queryParams = new URLSearchParams()
+
+        if (visitStatusFilter !== "all") {
+          queryParams.append("status", visitStatusFilter)
+        }
+
+        const apiUrl = `${baseUrl}?${queryParams.toString()}`
+
+        const res = await fetch(apiUrl, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
-        )
+        })
 
         if (!res.ok) {
           throw new Error("Failed to fetch visits")
         }
 
-        const data: VisitResponse = await res.json()
+        const data = await res.json()
+        setDatas(data)
         setVisitsData(data)
-        if (data.meta) {
-          setTotalVisitPages(data.meta.totalPages)
-          setCurrentVisitPage(data.meta.currentPage)
-        }
+
       } catch (err) {
         console.error("Error fetching visits:", err)
-        toast.error("Failed to fetch visits")
+        toast.error(err instanceof Error ? err.message : String(err))
       }
     }
 
     if (activeTab === "visits") {
       fetchVisits()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, token, currentVisitPage])
+  }, [activeTab, visitStatusFilter, token])
+
+  const handleStatusFilterChange = (newFilter: string) => {
+    setVisitStatusFilter(newFilter)
+    setCurrentVisitPage(1) // This will trigger the fetch with correct page
+  }
 
   // Fetch staff members for the edit form
   useEffect(() => {
@@ -469,8 +527,7 @@ export default function DashboardPage() {
         const data = await res.json()
         setStaffMembers(data.data || [])
       } catch (err) {
-        console.error("Error fetching staff members:", err)
-        toast.error("Failed to load staff members")
+        toast.error(err instanceof Error ? err.message : String(err) || "Error fetching staff members:")
       }
     }
 
@@ -479,79 +536,52 @@ export default function DashboardPage() {
     }
   }, [isEditVisitDialogOpen, token])
 
-  // Filter users based on search term and filters
-  const filteredUsers = userData.filter((user) => {
-    // Filter by search term
-    const matchesSearch =
-      user.fullname.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user._id.includes(searchTerm)
+  // Replace the filteredUsers calculation with this simpler version since filtering is now handled by the API
+  const filteredUsers = userData
 
-    // Filter by role
-    const matchesRole = roleFilter === "all" || user.role === roleFilter
+  // Handle overview visit status filter change
+  const handleOverviewVisitStatusFilterChange = (value: string) => {
+    setOverviewVisitStatusFilter(value)
+  }
 
-    // Filter by status
-    const matchesStatus = statusFilter === "all" || user.status === statusFilter
+  // Update the useEffect for fetching visits in the Overview tab
+  useEffect(() => {
+    const fetchVisitsForOverview = async () => {
+      if (activeTab === "overview") {
+        try {
+          const queryParams = new URLSearchParams({ limit: "10" })
 
-    return matchesSearch && matchesRole && matchesStatus
-  })
+          if (overviewVisitStatusFilter !== "all") {
+            queryParams.append("status", overviewVisitStatusFilter)
+          }
 
-  // Filter visits based on search term and filters for the Visits tab
-  const filteredVisits = React.useMemo(() => {
-    if (!visitsData?.data) return []
+          const apiUrl = `${process.env.NEXT_PUBLIC_API_URL}/visits/get-all-visit?${queryParams.toString()}`
 
-    return visitsData.data.filter((visit) => {
-      // Filter by search term
-      const matchesSearch =
-        visit.address.toLowerCase().includes(visitSearchTerm.toLowerCase()) ||
-        visit.client.fullname.toLowerCase().includes(visitSearchTerm.toLowerCase()) ||
-        (visit.staff?.fullname && visit.staff.fullname.toLowerCase().includes(visitSearchTerm.toLowerCase())) ||
-        visit._id.includes(visitSearchTerm)
+          const res = await fetch(apiUrl, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          })
 
-      // Filter by status (case-insensitive comparison)
-      const matchesStatus =
-        visitStatusFilter === "all" || visit.status.toLowerCase() === visitStatusFilter.toLowerCase()
+          if (!res.ok) {
+            throw new Error("Failed to fetch visits")
+          }
 
-      // Filter by date
-      let matchesDate = true
-      if (visitDateFilter === "today") {
-        const today = new Date().toISOString().split("T")[0]
-        matchesDate = visit.date.includes(today)
-      } else if (visitDateFilter === "thisweek") {
-        const now = new Date()
-        const startOfWeek = new Date(now)
-        startOfWeek.setDate(now.getDate() - now.getDay())
-        startOfWeek.setHours(0, 0, 0, 0)
-
-        const endOfWeek = new Date(now)
-        endOfWeek.setDate(startOfWeek.getDate() + 6)
-        endOfWeek.setHours(23, 59, 59, 999)
-
-        const visitDate = new Date(visit.date)
-        matchesDate = visitDate >= startOfWeek && visitDate <= endOfWeek
-      } else if (visitDateFilter === "thismonth") {
-        const now = new Date()
-        const currentMonth = now.getMonth()
-        const currentYear = now.getFullYear()
-        const visitDate = new Date(visit.date)
-        matchesDate = visitDate.getMonth() === currentMonth && visitDate.getFullYear() === currentYear
+          const data: VisitResponse = await res.json()
+          setVisitsData(data)
+        } catch (err) {
+          console.error("Error fetching visits for overview:", err)
+        }
       }
+    }
 
-      return matchesSearch && matchesStatus && matchesDate
-    })
-  }, [visitsData, visitSearchTerm, visitStatusFilter, visitDateFilter])
+    fetchVisitsForOverview()
+    const interval = setInterval(fetchVisitsForOverview, 10000) // Every 10s
 
-  // Filter visits for the Overview tab
-  const filteredOverviewVisits = React.useMemo(() => {
-    if (!visitsData?.data) return []
-
-    return visitsData.data.filter((visit) => {
-      // Filter by status (case-insensitive comparison)
-      return (
-        overviewVisitStatusFilter === "all" || visit.status.toLowerCase() === overviewVisitStatusFilter.toLowerCase()
-      )
-    })
-  }, [visitsData, overviewVisitStatusFilter])
+    return () => clearInterval(interval)
+  }, [activeTab, token, overviewVisitStatusFilter])
 
   // Get status class for styling
   const getStatusClass = (status: string) => {
@@ -563,29 +593,13 @@ export default function DashboardPage() {
     if (normalizedStatus.includes("inactive")) return "bg-red-100 text-red-800"
     if (normalizedStatus.includes("scheduled")) return "bg-blue-100 text-blue-800"
     if (normalizedStatus.includes("progress")) return "bg-yellow-100 text-yellow-800"
-    if (normalizedStatus.includes("complete")) return "bg-green-100 text-green-800"
+    if (normalizedStatus.includes("completed")) return "bg-green-100 text-green-800"
     if (normalizedStatus.includes("cancelled")) return "bg-red-100 text-red-800"
-    if (normalizedStatus.includes("confirm")) return "bg-green-100 text-green-800"
+    if (normalizedStatus.includes("confirmed")) return "bg-green-100 text-green-800"
     if (normalizedStatus.includes("pending")) return "bg-yellow-100 text-yellow-800"
 
     return "bg-gray-100 text-gray-800"
   }
-
-  // Get calendar day class for styling
-  // const getCalendarDayClass = (status?: string) => {
-  //   switch (status) {
-  //     case "success":
-  //       return "bg-green-100"
-  //     case "cancelled":
-  //       return "bg-red-100"
-  //     case "pending":
-  //       return "bg-yellow-100"
-  //     case "confirmed":
-  //       return "bg-blue-100"
-  //     default:
-  //       return ""
-  //   }
-  // }
 
   const handleDeleteClick = (userId: string) => {
     setSelectedUserId(userId)
@@ -593,12 +607,12 @@ export default function DashboardPage() {
   }
 
   const handleEditClick = (user: UserData) => {
-    setSelectedUserId(user._id)
+    setSelectedUserId(user?._id)
     setEditUserData({
-      fullname: user.fullname,
-      email: user.email,
+      fullname: user?.fullname,
+      email: user?.email,
       password: "",
-      role: user.role as "admin" | "client" | "staff",
+      role: user?.role as "admin" | "client" | "staff",
     })
     setIsEditDialogOpen(true)
   }
@@ -618,11 +632,11 @@ export default function DashboardPage() {
       }
 
       // Update the user list after successful deletion
-      setUserData(userData.filter((user) => user._id !== selectedUserId))
+      setUserData(userData?.filter((user) => user?._id !== selectedUserId))
       toast.success("User deleted successfully")
     } catch (error) {
-      console.error("Error deleting user:", error)
-      toast.error("Failed to delete user")
+      // console.error("Error deleting user:", error)
+      toast.error(error instanceof Error ? error.message : String(error))
     } finally {
       setIsDeleteDialogOpen(false)
     }
@@ -645,12 +659,11 @@ export default function DashboardPage() {
       }
 
       // Update the user list with the edited user
-      setUserData(userData.map((user) => (user._id === selectedUserId ? { ...user, ...editUserData } : user)))
+      setUserData(userData?.map((user) => (user?._id === selectedUserId ? { ...user, ...editUserData } : user)))
 
       toast.success("User updated successfully")
     } catch (error) {
-      console.error("Error updating user:", error)
-      toast.error("Failed to update user")
+      toast.error(error instanceof Error ? error.message : String(error))
     } finally {
       setIsEditDialogOpen(false)
     }
@@ -674,8 +687,8 @@ export default function DashboardPage() {
       setSpecificVisit(data.data || data)
       setIsViewDialogOpen(true)
     } catch (error) {
-      console.error("Error fetching visit details:", error)
-      toast.error("Failed to fetch visit details")
+      // console.error("Error fetching visit details:", error)
+      toast.error(error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -702,13 +715,13 @@ export default function DashboardPage() {
       if (visitsData) {
         setVisitsData({
           ...visitsData,
-          data: visitsData.data.filter((visit) => visit._id !== selectedVisitId),
+          data: visitsData.data.filter((visit) => visit?._id !== selectedVisitId),
         })
       }
       toast.success("Visit deleted successfully")
     } catch (error) {
-      console.error("Error deleting visit:", error)
-      toast.error("Failed to delete visit")
+      // console.error("Error deleting visit:", error)
+      toast.error(error instanceof Error ? error.message : String(error) || "Failed to delete visit")
     } finally {
       setIsDeleteVisitDialogOpen(false)
     }
@@ -716,16 +729,16 @@ export default function DashboardPage() {
 
   // Handle edit visit button click
   const handleEditVisit = (visit: VisitData) => {
-    setSelectedVisitId(visit._id)
+    setSelectedVisitId(visit?._id)
     setEditVisitData({
-      staff: visit.staff?._id || "",
-      type: visit.type || "routine check",
-      notes: visit.notes || "",
+      staff: visit?.staff?._id || "",
+      type: visit?.type || "routine check",
+      notes: visit?.notes || "",
     })
     setIsEditVisitDialogOpen(true)
   }
 
-  // Handle edit visit form submission
+  // Update the handleEditVisitSubmit function to refresh data with pagination
   const handleEditVisitSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
@@ -742,9 +755,10 @@ export default function DashboardPage() {
         throw new Error("Failed to update visit")
       }
 
-      // Refresh visits data after update
+      // Immediately refresh visits data after update
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/visits/get-all-visit?page=${currentVisitPage}&limit=${visitsPerPage}`,
+        `${process.env.NEXT_PUBLIC_API_URL}/visits/get-all-visit?page=${currentVisitPage}&limit=${visitsPerPage}${visitStatusFilter !== "all" ? `&status=${visitStatusFilter}` : ""
+        }${visitSearchTerm ? `&search=${visitSearchTerm}` : ""}`,
         {
           method: "GET",
           headers: {
@@ -757,21 +771,21 @@ export default function DashboardPage() {
       if (res.ok) {
         const data = await res.json()
         setVisitsData(data)
+        setDatas(data)
       }
 
       toast.success("Visit updated successfully")
     } catch (error) {
-      console.error("Error updating visit:", error)
-      toast.error("Failed to update visit")
+      toast.error(error instanceof Error ? error.message : String(error))
     } finally {
       setIsEditVisitDialogOpen(false)
     }
   }
 
   const handleOpenStatusModal = (visit: VisitData) => {
-    setSelectedVisitId(visit._id)
+    setSelectedVisitId(visit?._id)
     setStatusForm({
-      status: visit.status,
+      status: visit?.status,
       notes: "",
     })
     setIsStatusModalOpen(true)
@@ -798,9 +812,10 @@ export default function DashboardPage() {
         throw new Error("Failed to update status")
       }
 
-      // Refresh visits data after update
+      // Immediately refresh visits data after update
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/visits/get-all-visit?page=${currentVisitPage}&limit=${visitsPerPage}`,
+        `${process.env.NEXT_PUBLIC_API_URL}/visits/get-all-visit?page=${currentVisitPage}&limit=${visitsPerPage}${visitStatusFilter !== "all" ? `&status=${visitStatusFilter}` : ""
+        }${visitSearchTerm ? `&search=${visitSearchTerm}` : ""}`,
         {
           method: "GET",
           headers: {
@@ -813,6 +828,7 @@ export default function DashboardPage() {
       if (res.ok) {
         const data = await res.json()
         setVisitsData(data)
+        setDatas(data)
       }
 
       toast.success("Status updated successfully")
@@ -820,8 +836,8 @@ export default function DashboardPage() {
       setStatusForm({ status: "", notes: "" })
       setSelectedVisitId("")
     } catch (error) {
-      console.error("Error updating status:", error)
-      toast.error("Failed to update status. Please try again.")
+      // console.error("Error updating status:", error)
+      toast.error(error instanceof Error ? error.message : String(error))
     } finally {
       setIsSubmitting(false)
     }
@@ -934,6 +950,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const fetchNotifications = async () => {
+      setIsNotificationsLoading(true)
       try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/notifications/admin`, {
           headers: {
@@ -942,57 +959,89 @@ export default function DashboardPage() {
         })
 
         if (!res.ok) {
-          throw new Error("Failed to fetch pending messages")
+          throw new Error("Failed to fetch notifications")
         }
 
         const data = await res.json()
         setNotifications(data.data)
         /* eslint-disable @typescript-eslint/no-explicit-any */
-      } catch (err: any ) {
-        setError(err.message)
+      } catch (err) {
+        console.error("Error fetching notifications:", err)
+        // toast.error(err instanceof Error ? err.message : String(err))
+        // setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setIsNotificationsLoading(false)
       }
     }
 
     fetchNotifications()
   }, [token])
 
-  // Fetch visits for the Overview tab
+  // Add real-time polling for visits data
   useEffect(() => {
-    const fetchVisitsForOverview = async () => {
-      if (activeTab === "overview" && !visitsData) {
-        try {
-          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/visits/get-all-visit?limit=10`, {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          })
+    // Only set up polling when on the visits tab
+    if (activeTab !== "visits") return
 
-          if (!res.ok) {
-            throw new Error("Failed to fetch visits")
-          }
+    // Initial fetch
+    const fetchVisitsData = async () => {
+      try {
+        const baseUrl = `${process.env.NEXT_PUBLIC_API_URL}/visits/get-all-visit`
+        const queryParams = new URLSearchParams({
+          page: currentVisitPage.toString(),
+          limit: visitsPerPage.toString(),
+        })
 
-          const data: VisitResponse = await res.json()
-          setVisitsData(data)
-        } catch (err) {
-          console.error("Error fetching visits for overview:", err)
+        if (visitStatusFilter !== "all") {
+          queryParams.append("status", visitStatusFilter)
         }
+
+        if (visitSearchTerm.trim()) {
+          queryParams.append("search", visitSearchTerm.trim())
+        }
+
+        const apiUrl = `${baseUrl}?${queryParams.toString()}`
+
+        const res = await fetch(apiUrl, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        })
+
+        if (!res.ok) {
+          throw new Error("Failed to fetch visits")
+        }
+
+        const data = await res.json()
+
+        // Check if data has changed before updating state
+        if (JSON.stringify(data) !== JSON.stringify(datas)) {
+          setDatas(data)
+          setVisitsData(data)
+
+          if (data.meta) {
+            setTotalVisitPages(data.meta.totalPages)
+            setCurrentVisitPage((prev) => Math.min(prev, data.meta.totalPages))
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching visits:", err)
       }
     }
 
-    fetchVisitsForOverview()
-  }, [activeTab, token, visitsData])
+    // Set up polling interval (every 5 seconds)
+    const intervalId = setInterval(fetchVisitsData, 5000)
+
+    // Clean up interval on component unmount or tab change
+    return () => clearInterval(intervalId)
+  }, [activeTab, currentVisitPage, visitStatusFilter, visitSearchTerm, token, datas, visitsPerPage])
+
+
 
   return (
-    <div className="p-4 h-screen overflow-y-auto">
+    <div className="p-4 ">
       <PageHeader title="Admin Name" />
-
-      {error && (
-        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4" role="alert">
-          <p>{error}</p>
-        </div>
-      )}
 
       <Tabs defaultValue="overview" value={activeTab} onValueChange={setActiveTab}>
         <div className="bg-white rounded-full p-1 mb-6 inline-flex mt-2">
@@ -1032,7 +1081,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex justify-between items-center">
-                  <div className="text-4xl font-bold text-navy-900">{metrics.totalVisits}</div>
+                  <div className="text-4xl font-bold text-navy-900">{metricsData?.totalVisits}</div>
                 </div>
               </CardContent>
             </Card>
@@ -1047,7 +1096,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex justify-between items-center">
-                  <div className="text-4xl font-bold text-navy-900">{metrics.activeUsers}</div>
+                  <div className="text-4xl font-bold text-navy-900">{metrics?.activeUsers}</div>
                 </div>
               </CardContent>
             </Card>
@@ -1062,7 +1111,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex justify-between items-center">
-                  <div className="text-4xl font-bold text-navy-900">{metrics.pendingVisits}</div>
+                  <div className="text-4xl font-bold text-navy-900">{metrics?.pendingVisits}</div>
                 </div>
               </CardContent>
             </Card>
@@ -1105,7 +1154,7 @@ export default function DashboardPage() {
                       size="sm"
                       className="flex items-center gap-1"
                       onClick={exportToPDF}
-                      disabled={isRevenueLoading || revenueData.length === 0}
+                      disabled={isRevenueLoading || revenueData?.length === 0}
                     >
                       <FileText className="h-4 w-4" />
                       Export PDF
@@ -1119,8 +1168,8 @@ export default function DashboardPage() {
                       <div className="text-xl font-bold">
                         {isRevenueLoading
                           ? "Loading..."
-                          : revenueData.length > 0
-                            ? `$${revenueData[revenueData.length - 1]?.revenue.toLocaleString()}`
+                          : revenueData?.length > 0
+                            ? `$${revenueData[revenueData?.length - 1]?.revenue.toLocaleString()}`
                             : "$0"}
                       </div>
                     </div>
@@ -1187,18 +1236,18 @@ export default function DashboardPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <div className="grid grid-cols-3 text-xs text-gray-500 pb-2">
+                    <div className="grid grid-cols-2 text-xs text-gray-500 pb-2">
                       <div>Name</div>
                       <div>Package</div>
-                      <div>Price</div>
+                      {/* <div>Price</div> */}
                     </div>
-                    {recentData?.data.map((activity, index) => (
-                      <div key={index} className="grid grid-cols-3 items-center">
+                    {recentData?.data?.map((activity, index) => (
+                      <div key={index} className="grid grid-cols-2 items-center">
                         <div className="text-sm font-medium">{activity?.user?.fullname}</div>
                         <div className="text-sm">{activity?.plan?.name}</div>
-                        <div>
+                        {/* <div>
                           <span className={`px-2 py-1 rounded-full text-xs`}>{activity?.plan?.price}</span>
-                        </div>
+                        </div> */}
                       </div>
                     ))}
                   </div>
@@ -1208,16 +1257,16 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-1">
-            <div className="md:col-span-2 ">
+            <div className="md:col-span-2">
               <Card className="shadow-sm">
-                <CardHeader className="pb-2">
+                <CardHeader className="pb-2 sticky top-0 bg-white z-10 border-b">
                   <div className="flex justify-between items-center">
-                    <CardTitle>All Visits </CardTitle>
+                    <CardTitle>All Visits</CardTitle>
                     <div className="flex gap-2">
                       <Select
                         defaultValue="all"
                         value={overviewVisitStatusFilter}
-                        onValueChange={(value) => setOverviewVisitStatusFilter(value)}
+                        onValueChange={handleOverviewVisitStatusFilterChange}
                       >
                         <SelectTrigger className="w-[120px]">
                           <SelectValue placeholder="Status" />
@@ -1234,45 +1283,45 @@ export default function DashboardPage() {
                   </div>
                   <div className="text-xs text-gray-500">View and manage all scheduled visits</div>
                 </CardHeader>
-                <CardContent>
-                  <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
+                <CardContent className="max-h-[300px] overflow-y-auto pr-2">
+                  <div className="space-y-4">
                     {visitsData?.data && visitsData.data.length > 0 ? (
-                      filteredOverviewVisits.map((visit) => (
+                      visitsData.data.map((visit) => (
                         <div key={visit._id} className="flex items-start gap-3 p-3 border rounded-lg hover:bg-gray-50">
                           <div
                             className={`w-2 self-stretch rounded-full ${visit.status.toLowerCase() === "completed"
-                                ? "bg-green-500"
-                                : visit.status.toLowerCase() === "cancelled"
-                                  ? "bg-red-500"
-                                  : visit.status.toLowerCase() === "confirmed"
-                                    ? "bg-blue-500"
-                                    : "bg-yellow-500"
+                              ? "bg-green-500"
+                              : visit.status.toLowerCase() === "cancelled"
+                                ? "bg-red-500"
+                                : visit.status.toLowerCase() === "confirmed"
+                                  ? "bg-blue-500"
+                                  : "bg-yellow-500"
                               }`}
                           ></div>
                           <div className="flex-1 min-w-0">
                             <div className="flex justify-between items-start">
                               <div>
-                                <h4 className="font-medium text-sm truncate">{visit.client.fullname}</h4>
-                                <p className="text-xs text-gray-500 mt-1">{visit.address}</p>
+                                <h4 className="font-medium text-sm truncate">{visit?.client?.fullname}</h4>
+                                <p className="text-xs text-gray-500 mt-1">{visit?.address}</p>
                               </div>
-                              <span className={`px-2 py-1 rounded-full text-xs ${getStatusClass(visit.status)}`}>
-                                {visit.status}
+                              <span className={`px-2 py-1 rounded-full text-xs ${getStatusClass(visit?.status)}`}>
+                                {visit?.status}
                               </span>
                             </div>
                             <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
                               <div className="flex items-center gap-1">
                                 <Calendar className="h-3 w-3" />
-                                {formatDate(visit.date)}
+                                {formatDate(visit?.date)}
                               </div>
                               <div className="flex items-center gap-1">
                                 <Clock className="h-3 w-3" />
-                                {extractTime(visit.date)}
+                                {extractTime(visit?.date)}
                               </div>
                             </div>
                             <div className="flex justify-between items-center mt-2">
                               <div className="text-xs">
-                                {visit.staff ? (
-                                  <span className="text-gray-700">Staff: {visit.staff.fullname}</span>
+                                {visit?.staff ? (
+                                  <span className="text-gray-700">Staff: {visit?.staff?.fullname}</span>
                                 ) : (
                                   <span className="text-gray-400">No staff assigned</span>
                                 )}
@@ -1281,7 +1330,7 @@ export default function DashboardPage() {
                                 variant="ghost"
                                 size="sm"
                                 className="h-7 text-xs"
-                                onClick={() => handleViewVisit(visit._id)}
+                                onClick={() => handleViewVisit(visit?._id)}
                               >
                                 View Details
                               </Button>
@@ -1290,34 +1339,45 @@ export default function DashboardPage() {
                         </div>
                       ))
                     ) : (
-                      <div className="text-center py-8 text-gray-500">
-                        {isLoading ? "Loading visits..." : "No visits found"}
-                      </div>
+                      <div className="text-center py-8 text-gray-500">No visits found</div>
                     )}
                   </div>
                 </CardContent>
               </Card>
             </div>
-            <div className=" max-h-[410px] overflow-y-auto">
-              <Card className="shadow-sm">
+            <div>
+              <Card className="lg:col-span-2 ">
                 <CardHeader className="pb-2">
-                  <div className="flex justify-between items-center">
-                    <CardTitle>Notifications</CardTitle>
-                  </div>
+                  <CardTitle className="text-base font-medium">Notifications</CardTitle>
+                  <div className="text-xs text-muted-foreground">Latest updates and alerts.</div>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    {notifications.map((notification, index) => (
-                      <div key={index} className="flex justify-between">
-                        <div>
-                          <div className="text-sm font-medium">{notification?.message}</div>
-                          <div className="text-xs text-gray-500">{notification.time}</div>
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {notification?.time?.includes("h") ? notification.time : ""}
-                        </div>
+                  <div className="space-y-4 max-h-[290px] overflow-y-auto">
+                    {isNotificationsLoading ? (
+                      <div className="flex justify-center items-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#4F46E5]"></div>
                       </div>
-                    ))}
+                    ) : notifications?.length > 0 ? (
+                      notifications?.map((notification) => (
+                        <div key={notification?._id} className="flex justify-between items-start mt-5 text-[14px]">
+                          <div className="flex justify-between w-full text-[12px]">
+                            <h4 className="text-sm">{notification?.message}</h4>
+                            <p className="text-muted-foreground text-[12px] text-nowrap">
+                              {new Date(notification?.createdAt).toLocaleString("en-US", {
+                                year: "numeric",
+                                month: "short",
+                                day: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: true,
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">No notifications found</div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -1339,7 +1399,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex justify-between items-center">
-                  <div className="text-4xl font-bold text-navy-900">{metrics.activeUsers}</div>
+                  <div className="text-4xl font-bold text-navy-900">{metrics?.activeUsers}</div>
                 </div>
               </CardContent>
             </Card>
@@ -1353,7 +1413,7 @@ export default function DashboardPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-4xl font-bold text-navy-900">{metrics.totalSecurityStaff}</div>
+                <div className="text-4xl font-bold text-navy-900">{metrics?.totalSecurityStaff}</div>
               </CardContent>
             </Card>
             <Card className="shadow-sm">
@@ -1366,7 +1426,7 @@ export default function DashboardPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-4xl font-bold text-navy-900">{metrics.totalAdmin}</div>
+                <div className="text-4xl font-bold text-navy-900">{metrics?.totalAdmin}</div>
               </CardContent>
             </Card>
           </div>
@@ -1422,25 +1482,25 @@ export default function DashboardPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredUsers.length > 0 ? (
-                      filteredUsers.map((user, index) => (
-                        <TableRow key={user._id}>
+                    {filteredUsers?.length > 0 ? (
+                      filteredUsers?.map((user, index) => (
+                        <TableRow key={user?._id}>
                           <TableCell>{(currentUserPage - 1) * itemsPerPage + index + 1}</TableCell>
-                          <TableCell>{user.fullname}</TableCell>
-                          <TableCell>{user.email}</TableCell>
-                          <TableCell>{user.role}</TableCell>
+                          <TableCell>{user?.fullname}</TableCell>
+                          <TableCell>{user?.email}</TableCell>
+                          <TableCell>{user?.role}</TableCell>
                           <TableCell>
-                            <span className={`px-2 py-1 rounded-full text-xs ${getStatusClass(user.status)}`}>
-                              {user.status}
+                            <span className={`px-2 py-1 rounded-full text-xs ${getStatusClass(user?.status)}`}>
+                              {user?.status}
                             </span>
                           </TableCell>
-                          <TableCell>{new Date(user.lastActive).toLocaleDateString()}</TableCell>
+                          <TableCell>{new Date(user?.lastActive).toLocaleDateString()}</TableCell>
                           <TableCell>
                             <div className="flex space-x-2">
                               <Button variant="ghost" size="icon" onClick={() => handleEditClick(user)}>
                                 <Edit className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(user._id)}>
+                              <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(user?._id)}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </div>
@@ -1517,7 +1577,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex justify-between items-center">
-                  <div className="text-4xl font-bold text-navy-900">{metricsData?.activeUsersCount}</div>
+                  <div className="text-4xl font-bold text-navy-900">{metricsData?.totalVisits}</div>
                 </div>
               </CardContent>
             </Card>
@@ -1557,12 +1617,12 @@ export default function DashboardPage() {
               <Input
                 placeholder="Search by name, address..."
                 className="pl-9 pr-4 py-2 w-full"
-                value={visitSearchTerm}
-                onChange={(e) => setVisitSearchTerm(e.target.value)}
+                defaultValue={visitSearchTerm}
+                onChange={(e) => debouncedSearch(e.target.value)}
               />
             </div>
             <div className="flex gap-2">
-              <Select defaultValue="all" onValueChange={setVisitStatusFilter}>
+              <Select defaultValue="all" onValueChange={handleStatusFilterChange}>
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="Select Status" />
                 </SelectTrigger>
@@ -1574,18 +1634,6 @@ export default function DashboardPage() {
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                 </SelectContent>
               </Select>
-              <Select defaultValue="all" onValueChange={setVisitDateFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Date Filter" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Dates</SelectItem>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="thisweek">This Week</SelectItem>
-                  <SelectItem value="thismonth">This Month</SelectItem>
-                </SelectContent>
-              </Select>
-              {/* <Button className="bg-[#091057] hover:bg-[#091057]/80">Add Visit</Button> */}
             </div>
           </div>
 
@@ -1606,17 +1654,22 @@ export default function DashboardPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredVisits.length > 0 ? (
-                    filteredVisits.map((visit) => (
-                      <TableRow key={visit._id}>
-                        <TableCell>{formatDate(visit.date)}</TableCell>
-                        <TableCell>{extractTime(visit.date)}</TableCell>
-                        <TableCell>{visit.address}</TableCell>
-                        <TableCell>{visit?.client?.fullname}</TableCell>
-                        <TableCell>{visit.staff?.fullname || "Not Assigned"}</TableCell>
+                  {datas?.data && datas?.data?.length > 0 ? (
+                    datas?.data?.map((visit) => (
+                      <TableRow key={visit?._id}>
+                        <TableCell>{formatDate(visit?.date)}</TableCell>
+                        <TableCell>{extractTime(visit?.date)}</TableCell>
+                        <TableCell>{visit?.address}</TableCell>
                         <TableCell>
-                          <span className={`px-2 py-1 rounded-full text-xs ${getStatusClass(visit.status)}`}>
-                            {visit.status}
+                          {visit?.client?.fullname}
+                          <div>
+                            <span className="text-xs text-gray-500">{visit?.client?.email}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>{visit?.staff?.fullname || "Not Assigned"}</TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs ${getStatusClass(visit?.status)}`}>
+                            {visit?.status}
                           </span>
                         </TableCell>
                         <TableCell>
@@ -1631,10 +1684,10 @@ export default function DashboardPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex space-x-2">
-                            <Button variant="ghost" size="icon" onClick={() => handleDeleteVisit(visit._id)}>
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteVisit(visit?._id)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleViewVisit(visit._id)}>
+                            <Button variant="ghost" size="icon" onClick={() => handleViewVisit(visit?._id)}>
                               <Eye className="h-4 w-4" />
                             </Button>
                           </div>
@@ -1655,11 +1708,11 @@ export default function DashboardPage() {
 
           {/* Pagination for Visits */}
           {totalVisitPages > 1 && (
-            <div className="flex items-center justify-between mt-4 text-sm">
-              <div>
+            <div className="flex items-center justify-between mt-4">
+              <div className="text-sm text-muted-foreground">
                 Showing {(currentVisitPage - 1) * visitsPerPage + 1} to{" "}
-                {Math.min(currentVisitPage * visitsPerPage, totalVisitPages * visitsPerPage)} of{" "}
-                {totalVisitPages * visitsPerPage} results
+                {Math.min(currentVisitPage * visitsPerPage, datas?.meta?.totalItems || 0)} of{" "}
+                {datas?.meta?.totalItems || 0} results
               </div>
               <div className="flex items-center space-x-2">
                 <Button
@@ -1671,17 +1724,47 @@ export default function DashboardPage() {
                   <span className="sr-only">Previous page</span>
                   &lt;
                 </Button>
-                {Array.from({ length: totalVisitPages }, (_, index) => index + 1).map((page) => (
-                  <Button
-                    key={page}
-                    variant="outline"
-                    size="sm"
-                    className={`h-8 w-8 p-0 ${currentVisitPage === page ? "bg-yellow-100" : ""}`}
-                    onClick={() => handleVisitPageChange(page)}
-                  >
-                    {page}
-                  </Button>
-                ))}
+                <div className="flex items-center">
+                  {Array.from({ length: Math.min(5, totalVisitPages) }, (_, i) => {
+                    // Show pages around the current page
+                    let pageToShow
+                    if (totalVisitPages <= 5) {
+                      pageToShow = i + 1
+                    } else if (currentVisitPage <= 3) {
+                      pageToShow = i + 1
+                    } else if (currentVisitPage >= totalVisitPages - 2) {
+                      pageToShow = totalVisitPages - 4 + i
+                    } else {
+                      pageToShow = currentVisitPage - 2 + i
+                    }
+
+                    return (
+                      <Button
+                        key={pageToShow}
+                        variant={currentVisitPage === pageToShow ? "default" : "outline"}
+                        size="sm"
+                        className={`h-8 w-8 p-0 ${currentVisitPage === pageToShow ? "bg-primary text-primary-foreground" : ""}`}
+                        onClick={() => handleVisitPageChange(pageToShow)}
+                      >
+                        {pageToShow}
+                      </Button>
+                    )
+                  })}
+
+                  {totalVisitPages > 5 && currentVisitPage < totalVisitPages - 2 && (
+                    <>
+                      {currentVisitPage < totalVisitPages - 3 && <span className="mx-1">...</span>}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => handleVisitPageChange(totalVisitPages)}
+                      >
+                        {totalVisitPages}
+                      </Button>
+                    </>
+                  )}
+                </div>
                 <Button
                   variant="outline"
                   size="icon"
@@ -1803,90 +1886,97 @@ export default function DashboardPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <h4 className="text-sm font-medium mb-1">Client</h4>
-                  <p className="text-sm">{specificVisit.client?.fullname}</p>
+                  <p className="text-sm">{specificVisit?.client?.fullname}</p>
                 </div>
                 <div>
                   <h4 className="text-sm font-medium mb-1">Email</h4>
-                  <p className="text-sm">{specificVisit.client?.email}</p>
+                  <p className="text-sm">{specificVisit?.client?.email}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <h4 className="text-sm font-medium mb-1">Staff</h4>
-                  <p className="text-sm">{specificVisit.staff?.fullname}</p>
+                  <p className="text-sm">{specificVisit?.staff?.fullname}</p>
                 </div>
                 <div>
                   <h4 className="text-sm font-medium mb-1">Date</h4>
-                  <p className="text-sm">{formatDate(specificVisit.date || "")}</p>
+                  <p className="text-sm">{formatDate(specificVisit?.date || "")}</p>
                 </div>
               </div>
 
-              <div>
-                <h4 className="text-sm font-medium mb-1">Address</h4>
-                <p className="text-sm">{specificVisit.address}</p>
+
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h4 className="text-sm font-medium mb-1">Address</h4>
+                  <p className="text-sm">{specificVisit?.address}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium mb-1">Status</h4>
+                  <span className={`px-2 py-1 rounded-full text-xs ${getStatusClass(specificVisit?.status || "")}`}>
+                    {specificVisit?.status}
+                  </span>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <h4 className="text-sm font-medium mb-1">Status</h4>
-                  <span className={`px-2 py-1 rounded-full text-xs ${getStatusClass(specificVisit.status || "")}`}>
-                    {specificVisit.status}
-                  </span>
+                  <h4 className="text-sm font-medium mb-1">Notes</h4>
+                  <p className="text-sm">{specificVisit?.notes || "No notes available"}</p>
                 </div>
                 <div>
-                  <h4 className="text-sm font-medium mb-1">Payment</h4>
-                  <span
-                    className={`px-2 py-1 rounded-full text-xs ${specificVisit.isPaid ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-                      }`}
-                  >
-                    {specificVisit.isPaid ? "Paid" : "Unpaid"}
-                  </span>
+                  <h4 className="text-sm font-medium mb-1">Plan</h4>
+                  <p className="text-sm">{specificVisit?.userPlan?.plan?.name || "No notes available"}</p>
                 </div>
               </div>
 
               <div>
-                <h4 className="text-sm font-medium mb-1">Notes</h4>
-                <p className="text-sm">{specificVisit.notes || "No notes available"}</p>
+                <h4 className="text-base font-medium mb-1">Ad-on Services: </h4>
+                <ul className="text-sm list-inside list-disc">
+                  {specificVisit?.userPlan?.addOnServices?.map((service) => (
+                    <li key={service._id}>{service.name}</li>
+                  ))}
+                </ul>
               </div>
 
               {specificVisit.issues && specificVisit.issues.length > 0 && (
                 <div>
                   <h4 className="text-sm font-medium mb-2">Issues</h4>
-                  {specificVisit.issues.map((issue, index) => (
+                  {specificVisit?.issues?.map((issue, index) => (
                     <div key={index} className="mb-3 p-3 border rounded-md">
                       <div className="grid grid-cols-2 gap-2 mb-2">
                         <div>
                           <h5 className="text-xs font-medium">Place</h5>
-                          <p className="text-sm">{issue.place}</p>
+                          <p className="text-sm">{issue?.place}</p>
                         </div>
                         <div>
                           <h5 className="text-xs font-medium">Type</h5>
                           <span
-                            className={`px-2 py-1 rounded-full text-xs ${issue.type === "warning" ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800"
+                            className={`px-2 py-1 rounded-full text-xs ${issue?.type === "warning" ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800"
                               }`}
                           >
-                            {issue.type}
+                            {issue?.type}
                           </span>
                         </div>
                       </div>
                       <div className="mb-2">
                         <h5 className="text-xs font-medium">Issue</h5>
-                        <p className="text-sm">{issue.issue}</p>
+                        <p className="text-sm">{issue?.issue}</p>
                       </div>
                       <div className="mb-2">
                         <h5 className="text-xs font-medium">Notes</h5>
-                        <p className="text-sm">{issue.notes}</p>
+                        <p className="text-sm">{issue?.notes}</p>
                       </div>
-                      {issue.media && issue.media.length > 0 && (
+                      {issue?.media && issue?.media?.length > 0 && (
                         <div>
                           <h5 className="text-xs font-medium mb-1">Media</h5>
                           <div className="flex flex-wrap gap-2">
-                            {issue.media.map((media, mediaIndex) => (
+                            {issue?.media?.map((media, mediaIndex) => (
                               <div key={mediaIndex} className="relative">
-                                {media.type === "photo" ? (
+                                {media?.type === "photo" ? (
                                   <Image
-                                    src={media.url || "/placeholder.svg"}
+                                    src={media?.url || "/placeholder.svg"}
                                     alt="Issue media"
                                     className="h-16 w-16 object-cover rounded-md"
                                     width={64}
@@ -1895,7 +1985,7 @@ export default function DashboardPage() {
                                 ) : (
                                   <div className="h-16 w-16 bg-gray-100 flex items-center justify-center rounded-md">
                                     <a
-                                      href={media.url}
+                                      href={media?.url}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="text-blue-600 text-xs"
@@ -1955,16 +2045,16 @@ export default function DashboardPage() {
               <div className="grid gap-2">
                 <Label htmlFor="staff">Staff</Label>
                 <Select
-                  value={editVisitData.staff}
+                  value={editVisitData?.staff}
                   onValueChange={(value) => setEditVisitData({ ...editVisitData, staff: value })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select staff member" />
                   </SelectTrigger>
                   <SelectContent>
-                    {staffMembers.map((staff) => (
-                      <SelectItem key={staff._id} value={staff._id}>
-                        {staff.fullname}
+                    {staffMembers?.map((staff) => (
+                      <SelectItem key={staff?._id} value={staff?._id}>
+                        {staff?.fullname}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1973,7 +2063,7 @@ export default function DashboardPage() {
               <div className="grid gap-2">
                 <Label htmlFor="type">Visit Type</Label>
                 <Select
-                  value={editVisitData.type}
+                  value={editVisitData?.type}
                   onValueChange={(value) => setEditVisitData({ ...editVisitData, type: value })}
                 >
                   <SelectTrigger>
@@ -1991,7 +2081,7 @@ export default function DashboardPage() {
                 <Label htmlFor="notes">Notes</Label>
                 <Textarea
                   id="notes"
-                  value={editVisitData.notes}
+                  value={editVisitData?.notes}
                   onChange={(e) =>
                     setEditVisitData({
                       ...editVisitData,
